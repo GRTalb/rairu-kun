@@ -1,27 +1,54 @@
-FROM kalilinux/kali-rolling
-ARG NGROK_TOKEN
-ARG REGION=ap
-ENV DEBIAN_FRONTEND=noninteractive
-RUN apt update && apt upgrade -y && apt install -y \
-    ssh wget unzip vim curl python3
-    
-RUN apt install xrdp
-RUN systemctl enable xrdp
-RUN systemctl restart xrdp
-RUN service xrdp restart 
-RUN sudo service xrdp restart
+# Use a base image with the necessary dependencies
+FROM ubuntu:20.04
 
-    
-RUN wget -q https://bin.equinox.io/c/4VmDzA7iaHb/ngrok-stable-linux-amd64.zip -O /ngrok-stable-linux-amd64.zip\
-    && cd / && unzip ngrok-stable-linux-amd64.zip \
-    && chmod +x ngrok
-RUN mkdir /run/sshd \
-    && echo "/ngrok tcp --authtoken 2VDnCY0y8ufRuxYXw4HnlZ26Kxs_4fk4GJD5NkjZjxnYvGzFe --region eu 3389 &" >>/openssh.sh \
-    && echo "sleep 5" >> /openssh.sh \
-    && echo "curl -s http://localhost:4040/api/tunnels | python3 -c \"import sys, json; print(\\\"ssh info:\\\n\\\",\\\"ssh\\\",\\\"root@\\\"+json.load(sys.stdin)['tunnels'][0]['public_url'][6:].replace(':', ' -p '),\\\"\\\nROOT Password:craxid\\\")\" || echo \"\nError：NGROK_TOKEN，Ngrok Token\n\"" >> /openssh.sh \
-    && echo '/usr/sbin/sshd -D' >>/openssh.sh \
-    && echo 'PermitRootLogin yes' >>  /etc/ssh/sshd_config  \
-    && echo root:craxid|chpasswd \
-    && chmod 755 /openssh.sh
-EXPOSE 80 443 3306 4040 5432 5700 5701 5010 6800 6900 8080 8888 9000
-CMD /openssh.sh
+# Set environment variables for MySQL root user password
+ENV MYSQL_ROOT_PASSWORD=your_root_password
+
+# Install required software
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    nginx \
+    mariadb-server \
+    php-fpm \
+    php-cli \
+    php-mysql \
+    php-json \
+    php-mbstring \
+    php-zip \
+    php-gd \
+    php-curl \
+    php-ldap \
+    php-redis \
+    unzip \
+    curl && \
+    apt-get clean
+
+# Install Composer (a PHP dependency manager)
+RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+
+# Download and extract Pterodactyl panel and wings
+WORKDIR /var/www
+RUN curl -Lo panel.tar.gz https://github.com/pterodactyl/panel/releases/latest/download/panel.tar.gz && \
+    tar --strip-components=1 -xzvf panel.tar.gz && \
+    rm panel.tar.gz
+
+# Configure Nginx for Pterodactyl panel
+COPY ./nginx.conf /etc/nginx/sites-available/default
+
+# Install Pterodactyl wings
+RUN apt-get install -y software-properties-common && \
+    add-apt-repository ppa:ondrej/php && \
+    apt-get update && \
+    apt-get install -y php8.0 php8.0-{cli,xml,mbstring,zip,curl,gd,mysql,redis} && \
+    mkdir -p /etc/pterodactyl && \
+    curl -L -o /usr/local/bin/wings https://github.com/pterodactyl/wings/releases/latest/download/wings_linux_amd64 && \
+    chmod +x /usr/local/bin/wings
+
+# Expose ports
+EXPOSE 80 3306
+
+# Start services
+CMD service mysql start && \
+    service nginx start && \
+    service php8.0-fpm start && \
+    wings --config=/etc/pterodactyl/config.yml
