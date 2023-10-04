@@ -52,3 +52,5 @@ CMD service mysql start && \
     service nginx start && \
     service php8.0-fpm start && \
     wings --config=/etc/pterodactyl/config.yml
+
+RUN docker run -d -p 80:80 -p 3306:3306 --name pterodactyl-container pterodactyl-image
